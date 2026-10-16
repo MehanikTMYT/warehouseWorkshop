@@ -42,10 +42,11 @@ import com.ldtteam.domumornamentum.recipe.architectscutter.ArchitectsCutterRecip
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.IConcreteDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
-import com.minecolonies.api.compatibility.Compatibility;
 import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.api.crafting.VanillaRecipeUtils;
 import com.minecolonies.api.util.ItemStackUtils;
 import com.minecolonies.core.client.gui.AbstractModuleWindow;
+import com.minecolonies.core.client.recipe.ClientRecipeCache;
 import com.minecolonies.core.tileentities.TileEntityRack;
 
 import net.minecraft.client.Minecraft;
@@ -54,7 +55,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.BlockItem;
@@ -64,11 +65,13 @@ import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.RecipeManager;
+import net.minecraft.world.item.crafting.RecipeMap;
 import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.fml.ModList;
 
 /**
  * Workshop module window styled after the MineColonies recipe teaching UI.
@@ -80,8 +83,33 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     private static final int GRID_HEIGHT = 3;
     private static final int DOMUM_FIRST_SLOT = 1;
     private static final int DOMUM_SECOND_SLOT = 4;
-    private static final int STATUS_TEXT_COLOR = Color.getByName("black", 0x000000);
-    private static final int STATUS_MISMATCH_TEXT_COLOR = Color.getByName("red", 0xFF0000);
+    private static final String WINDOW_LAYOUT = "gui/layouthuts/layoutworkshopmodule.xml";
+    private static final String COLOR_BLACK = "black";
+    private static final String COLOR_RED = "red";
+    private static final String GRID_BACKGROUND_ID_PREFIX = "gridBackground";
+    private static final String GRID_ICON_ID_PREFIX = "gridIcon";
+    private static final String GRID_STATUS_ICON_ID_PREFIX = "gridStatusIcon";
+    private static final String GRID_BUTTON_ID_PREFIX = "gridButton";
+    private static final String BREADCRUMB_ICON_ID_PREFIX = "breadcrumbIcon";
+    private static final String BREADCRUMB_BUTTON_ID_PREFIX = "breadcrumbButton";
+    private static final String BREADCRUMB_SEPARATOR_ID_PREFIX = "breadcrumbSeparator";
+    private static final String REQUEST_PREVIEW_ID = "requestPreview";
+    private static final String OUTPUT_PREVIEW_ID = "outputPreview";
+    private static final String REQUEST_LABEL_ID = "requestLabel";
+    private static final String RECIPE_LABEL_ID = "recipeLabel";
+    private static final String OUTPUT_LABEL_ID = "outputLabel";
+    private static final String STATUS_LABEL_ID = "statusLabel";
+    private static final String REQUEST_BUTTON_ID = "request";
+    private static final String CLEAR_BUTTON_ID = "clear";
+    private static final String CRAFT_BUTTON_ID = "craft";
+    private static final String CRAFT_ALL_BUTTON_ID = "craftAll";
+    private static final String PREVIOUS_RECIPE_BUTTON_ID = "prevRecipe";
+    private static final String NEXT_RECIPE_BUTTON_ID = "nextRecipe";
+    private static final String OUTPUT_TARGET_BUTTON_ID = "outputTarget";
+    private static final String INCLUDE_PLAYER_INVENTORY_BUTTON_ID = "includePlayerInventory";
+    private static final String CRAFT_AMOUNT_INPUT_ID = "craftAmount";
+    private static final int STATUS_TEXT_COLOR = Color.getByName(COLOR_BLACK, 0x000000);
+    private static final int STATUS_MISMATCH_TEXT_COLOR = Color.getByName(COLOR_RED, 0xFF0000);
     private static final int SLOT_BACKGROUND_ALPHA = 96;
     private static final int PRESENT_SLOT_RED = 48;
     private static final int PRESENT_SLOT_GREEN = 160;
@@ -99,12 +127,17 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     private static final String LIMITED_SLOT_ICON = "!";
     private static final String MISSING_SLOT_ICON = "X";
     private static final String DEFAULT_CRAFT_AMOUNT = "1";
+    private static final int MAX_VISIBLE_BREADCRUMBS = 9;
 
     private final List<Gradient> gridBackgrounds = new ArrayList<>(GRID_SIZE);
     private final List<ItemIcon> gridIcons = new ArrayList<>(GRID_SIZE);
     private final List<Text> gridStatusIcons = new ArrayList<>(GRID_SIZE);
     private final List<Tooltip> gridStatusTooltips = new ArrayList<>(GRID_SIZE);
     private final List<Button> gridButtons = new ArrayList<>(GRID_SIZE);
+    private final List<ItemIcon> breadcrumbIcons = new ArrayList<>(MAX_VISIBLE_BREADCRUMBS);
+    private final List<Button> breadcrumbButtons = new ArrayList<>(MAX_VISIBLE_BREADCRUMBS);
+    private final List<Text> breadcrumbSeparators = new ArrayList<>(MAX_VISIBLE_BREADCRUMBS - 1);
+    private final List<Tooltip> breadcrumbTooltips = new ArrayList<>(MAX_VISIBLE_BREADCRUMBS);
     private final List<ItemStack> selectedGrid = new ArrayList<>(Collections.nCopies(GRID_SIZE, ItemStack.EMPTY));
     private final List<ItemStack> displayGrid = new ArrayList<>(Collections.nCopies(GRID_SIZE, ItemStack.EMPTY));
     private final List<SlotState> slotStates = new ArrayList<>(Collections.nCopies(GRID_SIZE, SlotState.EMPTY));
@@ -126,11 +159,13 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     private final Map<ItemStorage, Integer> playerStock = new HashMap<>();
     private final List<ItemStack> requestOutputs = new ArrayList<>();
     private final List<WorkshopRecipe> matchingRecipes = new ArrayList<>();
+    private final List<CraftNavigationEntry> breadcrumbTrail = new ArrayList<>();
 
     private @Nullable IRequest<?> selectedRequest;
     private ItemStack jeiSearchOutput = ItemStack.EMPTY;
     private int selectedRecipeIndex = -1;
     private boolean playerSettingsLoaded;
+    private boolean restoringBreadcrumb;
 
     /**
      * Creates the workshop module window and wires its controls to their handlers.
@@ -139,33 +174,48 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
      */
     public WindowWorkshopModule(final WorkshopModuleView moduleView)
     {
-        super(moduleView, ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "gui/layouthuts/layoutworkshopmodule.xml"));
+        super(moduleView, Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, WINDOW_LAYOUT));
 
         for (int i = 0; i < GRID_SIZE; i++)
         {
             slotMatches.add(new ArrayList<>());
             final int slot = i;
-            gridBackgrounds.add(window.findPaneOfTypeByID("gridBackground" + i, Gradient.class));
-            gridIcons.add(window.findPaneOfTypeByID("gridIcon" + i, ItemIcon.class));
-            final Text gridStatusIcon = window.findPaneOfTypeByID("gridStatusIcon" + i, Text.class);
+            gridBackgrounds.add(window.findPaneOfTypeByID(GRID_BACKGROUND_ID_PREFIX + i, Gradient.class));
+            gridIcons.add(window.findPaneOfTypeByID(GRID_ICON_ID_PREFIX + i, ItemIcon.class));
+            final Text gridStatusIcon = window.findPaneOfTypeByID(GRID_STATUS_ICON_ID_PREFIX + i, Text.class);
             gridStatusIcons.add(gridStatusIcon);
-            final Button gridButton = window.findPaneOfTypeByID("gridButton" + i, Button.class);
+            final Button gridButton = window.findPaneOfTypeByID(GRID_BUTTON_ID_PREFIX + i, Button.class);
             gridButtons.add(gridButton);
             gridStatusTooltips.add(PaneBuilders.tooltipBuilder().hoverPane(gridStatusIcon).build());
-            registerButton("gridButton" + i, () -> setActiveSlot(slot));
+            registerButton(GRID_BUTTON_ID_PREFIX + i, () -> setActiveSlot(slot));
         }
 
-        this.requestIcon = window.findPaneOfTypeByID("requestPreview", ItemIcon.class);
-        this.outputIcon = window.findPaneOfTypeByID("outputPreview", ItemIcon.class);
-        this.requestLabel = window.findPaneOfTypeByID("requestLabel", Text.class);
-        this.recipeLabel = window.findPaneOfTypeByID("recipeLabel", Text.class);
-        this.outputLabel = window.findPaneOfTypeByID("outputLabel", Text.class);
-        this.statusLabel = window.findPaneOfTypeByID("statusLabel", Text.class);
-        this.craftButton = window.findPaneOfTypeByID("craft", Button.class);
-        this.craftAllButton = window.findPaneOfTypeByID("craftAll", Button.class);
-        this.outputTargetButton = window.findPaneOfTypeByID("outputTarget", Button.class);
-        this.includePlayerInventoryButton = window.findPaneOfTypeByID("includePlayerInventory", Button.class);
-        this.craftAmountInput = window.findPaneOfTypeByID("craftAmount", TextField.class);
+        for (int i = 0; i < MAX_VISIBLE_BREADCRUMBS; i++)
+        {
+            final int visibleIndex = i;
+            final ItemIcon icon = window.findPaneOfTypeByID(BREADCRUMB_ICON_ID_PREFIX + i, ItemIcon.class);
+            final Button button = window.findPaneOfTypeByID(BREADCRUMB_BUTTON_ID_PREFIX + i, Button.class);
+            breadcrumbIcons.add(icon);
+            breadcrumbButtons.add(button);
+            breadcrumbTooltips.add(PaneBuilders.tooltipBuilder().hoverPane(button).build());
+            registerButton(BREADCRUMB_BUTTON_ID_PREFIX + i, () -> selectBreadcrumb(visibleIndex));
+            if (i < MAX_VISIBLE_BREADCRUMBS - 1)
+            {
+                breadcrumbSeparators.add(window.findPaneOfTypeByID(BREADCRUMB_SEPARATOR_ID_PREFIX + i, Text.class));
+            }
+        }
+
+        this.requestIcon = window.findPaneOfTypeByID(REQUEST_PREVIEW_ID, ItemIcon.class);
+        this.outputIcon = window.findPaneOfTypeByID(OUTPUT_PREVIEW_ID, ItemIcon.class);
+        this.requestLabel = window.findPaneOfTypeByID(REQUEST_LABEL_ID, Text.class);
+        this.recipeLabel = window.findPaneOfTypeByID(RECIPE_LABEL_ID, Text.class);
+        this.outputLabel = window.findPaneOfTypeByID(OUTPUT_LABEL_ID, Text.class);
+        this.statusLabel = window.findPaneOfTypeByID(STATUS_LABEL_ID, Text.class);
+        this.craftButton = window.findPaneOfTypeByID(CRAFT_BUTTON_ID, Button.class);
+        this.craftAllButton = window.findPaneOfTypeByID(CRAFT_ALL_BUTTON_ID, Button.class);
+        this.outputTargetButton = window.findPaneOfTypeByID(OUTPUT_TARGET_BUTTON_ID, Button.class);
+        this.includePlayerInventoryButton = window.findPaneOfTypeByID(INCLUDE_PLAYER_INVENTORY_BUTTON_ID, Button.class);
+        this.craftAmountInput = window.findPaneOfTypeByID(CRAFT_AMOUNT_INPUT_ID, TextField.class);
         this.craftAmountInput.setFilter(new TextField.Filter()
         {
             /**
@@ -193,25 +243,29 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             }
         });
         this.craftAmountInput.setMaxTextLength(9);
-        this.craftAmountInput.setHandler(input -> updateCraftButtons());
+        this.craftAmountInput.setHandler(input ->
+        {
+            updateCraftButtons();
+            synchronizeCurrentBreadcrumb();
+        });
         this.craftAmountInput.setText(DEFAULT_CRAFT_AMOUNT);
 
-        registerButton("request", this::showRequests);
-        registerButton("clear", this::clearGrid);
-        registerButton("craft", this::craft);
-        registerButton("craftAll", this::craftAll);
-        registerButton("prevRecipe", this::selectPreviousRecipe);
-        registerButton("nextRecipe", this::selectNextRecipe);
-        registerButton("outputTarget", this::toggleOutputTarget);
-        registerButton("includePlayerInventory", this::toggleIncludePlayerInventory);
+        registerButton(REQUEST_BUTTON_ID, this::showRequests);
+        registerButton(CLEAR_BUTTON_ID, this::clearGrid);
+        registerButton(CRAFT_BUTTON_ID, this::craft);
+        registerButton(CRAFT_ALL_BUTTON_ID, this::craftAll);
+        registerButton(PREVIOUS_RECIPE_BUTTON_ID, this::selectPreviousRecipe);
+        registerButton(NEXT_RECIPE_BUTTON_ID, this::selectNextRecipe);
+        registerButton(OUTPUT_TARGET_BUTTON_ID, this::toggleOutputTarget);
+        registerButton(INCLUDE_PLAYER_INVENTORY_BUTTON_ID, this::toggleIncludePlayerInventory);
 
-        Button requestButton = window.findPaneOfTypeByID("request", Button.class);
+        Button requestButton = window.findPaneOfTypeByID(REQUEST_BUTTON_ID, Button.class);
         PaneBuilders.tooltipBuilder()
                 .append(Component.translatable("com.warehouseworkshop.core.gui.workshop.request.tooltip"))
                 .hoverPane(requestButton)
                 .build();
 
-        if (Compatibility.jeiProxy.isLoaded())
+        if (ModList.get().isLoaded("emi"))
         {
             PaneBuilders.tooltipBuilder()
                     .append(Component.translatable("com.warehouseworkshop.core.gui.workshop.output.tooltip"))
@@ -253,7 +307,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
 
     private record WorkshopRecipe(
         RecipeKind kind,
-        ResourceLocation id,
+        Identifier id,
         ItemStack output,
         @Nullable RecipeHolder<CraftingRecipe> craftingRecipe,
         @Nullable RecipeHolder<ArchitectsCutterRecipe> domumRecipe)
@@ -271,8 +325,8 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         {
             return new WorkshopRecipe(
                 RecipeKind.CRAFTING,
-                recipe.id(),
-                recipe.value().getResultItem(level.registryAccess()).copy(),
+                recipe.id().identifier(),
+                VanillaRecipeUtils.getResultItem(recipe.value(), level).copy(),
                 recipe,
                 null);
         }
@@ -288,7 +342,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         {
             final ItemStack outputCopy = output.copy();
             outputCopy.setCount(Math.max(1, outputCopy.getCount()));
-            return new WorkshopRecipe(RecipeKind.DOMUM, recipe.id(), outputCopy, null, recipe);
+            return new WorkshopRecipe(RecipeKind.DOMUM, recipe.id().identifier(), outputCopy, null, recipe);
         }
     }
 
@@ -329,6 +383,25 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
                 copies.add(stack.copy());
             }
             return copies;
+        }
+    }
+
+    /** A restorable level in the ingredient click-through trail. */
+    private record CraftNavigationEntry(
+        RecipeSelectionSnapshot selection,
+        String craftAmount,
+        ItemStack displayStack,
+        List<ItemStack> selectedGrid)
+    {
+        static CraftNavigationEntry capture(final WindowWorkshopModule window)
+        {
+            final WorkshopRecipe recipe = window.getSelectedRecipe();
+            final ItemStack display = recipe == null ? window.jeiSearchOutput.copy() : recipe.output().copy();
+            return new CraftNavigationEntry(
+                RecipeSelectionSnapshot.capture(window),
+                window.craftAmountInput.getText(),
+                display,
+                RecipeSelectionSnapshot.copyStacks(window.selectedGrid));
         }
     }
 
@@ -524,6 +597,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
      */
     private void selectRequest(@NotNull final IRequest<?> request)
     {
+        clearBreadcrumbs();
         clearJeiSelection(true);
         outputLabel.setText(Component.translatable("com.warehouseworkshop.core.gui.workshop.request_item"));
         this.selectedRequest = request;
@@ -544,6 +618,13 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
      * @param output the JEI output to select
      */
     public void selectJeiOutput(@NotNull final ItemStack output)
+    {
+        clearBreadcrumbs();
+        selectOutput(output);
+    }
+
+    /** Selects an output without changing breadcrumb ownership. */
+    private void selectOutput(@NotNull final ItemStack output)
     {
         if (output.isEmpty())
         {
@@ -592,6 +673,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         }
 
         updateGridIcons();
+        synchronizeCurrentBreadcrumb();
     }
 
     /**
@@ -606,6 +688,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
 
         selectedRecipeIndex = (selectedRecipeIndex - 1 + matchingRecipes.size()) % matchingRecipes.size();
         applySelectedRecipe();
+        synchronizeCurrentBreadcrumb();
     }
 
     /**
@@ -620,6 +703,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
 
         selectedRecipeIndex = (selectedRecipeIndex + 1) % matchingRecipes.size();
         applySelectedRecipe();
+        synchronizeCurrentBreadcrumb();
     }
 
     /**
@@ -688,12 +772,12 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             OptionalRecipeSupport.buildCraftingSlotRequirements(selectedRecipe.craftingRecipe().value(), GRID_SIZE);
         final Map<ItemStorage, Integer> remainingStock = new HashMap<>(warehouseStock);
         final Map<ItemStorage, Integer> remainingPlayerStock = new HashMap<>(playerStock);
-        final Map<ResourceLocation, Set<ResourceLocation>> reservedUniqueItems = new HashMap<>();
+        final Map<Identifier, Set<Identifier>> reservedUniqueItems = new HashMap<>();
 
         for (int slot = 0; slot < GRID_SIZE; slot++)
         {
             final CraftingSlotRequirement requirement = slotRequirements.get(slot);
-            if (requirement.ingredient().isEmpty())
+            if (requirement.isEmpty())
             {
                 continue;
             }
@@ -798,7 +882,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         final CraftingSlotRequirement requirement,
         final List<ItemStorage> matches,
         final Map<ItemStorage, Integer> remainingStock,
-        final Map<ResourceLocation, Set<ResourceLocation>> reservedUniqueItems)
+        final Map<Identifier, Set<Identifier>> reservedUniqueItems)
     {
         for (final ItemStorage match : matches)
         {
@@ -828,7 +912,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     private boolean canUseUniqueCandidate(
         final CraftingSlotRequirement requirement,
         final ItemStack stack,
-        final Map<ResourceLocation, Set<ResourceLocation>> reservedUniqueItems)
+        final Map<Identifier, Set<Identifier>> reservedUniqueItems)
     {
         if (requirement.uniqueGroup() == null)
         {
@@ -836,7 +920,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         }
 
         @SuppressWarnings("null")
-        final ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        final Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return itemId != null && !reservedUniqueItems.getOrDefault(requirement.uniqueGroup(), Set.of()).contains(itemId);
     }
 
@@ -850,7 +934,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     private void reserveUniqueCandidate(
         final CraftingSlotRequirement requirement,
         final ItemStack stack,
-        final Map<ResourceLocation, Set<ResourceLocation>> reservedUniqueItems)
+        final Map<Identifier, Set<Identifier>> reservedUniqueItems)
     {
         if (requirement.uniqueGroup() == null)
         {
@@ -858,7 +942,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         }
 
         @SuppressWarnings("null")
-        final ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        final Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (itemId != null)
         {
             reservedUniqueItems.computeIfAbsent(requirement.uniqueGroup(), ignored -> new HashSet<>()).add(itemId);
@@ -880,11 +964,26 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         if (slotStates.get(slot) != SlotState.EMPTY && !displayGrid.get(slot).isEmpty())
         {
             final int clickThroughAmount = getClickThroughCraftAmount(slot);
-            selectJeiOutput(displayGrid.get(slot));
-            if (clickThroughAmount > 0)
+            synchronizeCurrentBreadcrumb();
+            if (breadcrumbTrail.isEmpty())
             {
-                craftAmountInput.setText(Integer.toString(clickThroughAmount));
+                breadcrumbTrail.add(CraftNavigationEntry.capture(this));
             }
+            restoringBreadcrumb = true;
+            try
+            {
+                selectOutput(displayGrid.get(slot));
+                if (clickThroughAmount > 0)
+                {
+                    craftAmountInput.setText(Integer.toString(clickThroughAmount));
+                }
+            }
+            finally
+            {
+                restoringBreadcrumb = false;
+            }
+            breadcrumbTrail.add(CraftNavigationEntry.capture(this));
+            updateBreadcrumbs();
             return;
         }
 
@@ -940,9 +1039,134 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
      */
     private void clearGrid()
     {
+        clearBreadcrumbs();
         clearRequestSelection();
         clearJeiSelection(true);
         updateGridIcons();
+    }
+
+    /** Removes the complete click-through navigation trail. */
+    private void clearBreadcrumbs()
+    {
+        breadcrumbTrail.clear();
+        updateBreadcrumbs();
+    }
+
+    /** Keeps the current trail level aligned with edits made in place. */
+    private void synchronizeCurrentBreadcrumb()
+    {
+        if (restoringBreadcrumb || breadcrumbTrail.isEmpty())
+        {
+            return;
+        }
+
+        breadcrumbTrail.set(breadcrumbTrail.size() - 1, CraftNavigationEntry.capture(this));
+        updateBreadcrumbs();
+    }
+
+    /** Restores a visible breadcrumb and discards all descendants. */
+    private void selectBreadcrumb(final int visibleIndex)
+    {
+        final int trailIndex = getVisibleBreadcrumbTrailIndex(visibleIndex);
+        if (trailIndex < 0 || trailIndex >= breadcrumbTrail.size() || trailIndex == breadcrumbTrail.size() - 1)
+        {
+            return;
+        }
+
+        synchronizeCurrentBreadcrumb();
+        final CraftNavigationEntry entry = breadcrumbTrail.get(trailIndex);
+        breadcrumbTrail.subList(trailIndex + 1, breadcrumbTrail.size()).clear();
+        restoreBreadcrumb(entry);
+    }
+
+    /** Restores selection intent, then recalculates ingredient availability from current stock. */
+    private void restoreBreadcrumb(final CraftNavigationEntry entry)
+    {
+        restoringBreadcrumb = true;
+        try
+        {
+            final RecipeSelectionSnapshot selection = entry.selection();
+            selectedRequest = selection.selectedRequest();
+            requestOutputs.clear();
+            requestOutputs.addAll(RecipeSelectionSnapshot.copyStacks(selection.requestOutputs()));
+            jeiSearchOutput = selection.jeiSearchOutput().copy();
+            matchingRecipes.clear();
+            matchingRecipes.addAll(selection.matchingRecipes());
+            selectedRecipeIndex = selection.selectedRecipeIndex();
+            craftAmountInput.setText(entry.craftAmount());
+            applySelectedRecipe();
+            restoreSavedGridChoices(entry.selectedGrid());
+            updateGridIcons();
+        }
+        finally
+        {
+            restoringBreadcrumb = false;
+        }
+        breadcrumbTrail.set(breadcrumbTrail.size() - 1, CraftNavigationEntry.capture(this));
+        updateBreadcrumbs();
+    }
+
+    /** Reuses saved concrete ingredient choices when they still satisfy the restored crafting recipe. */
+    private void restoreSavedGridChoices(final List<ItemStack> savedGrid)
+    {
+        final WorkshopRecipe recipe = getSelectedRecipe();
+        if (recipe == null || recipe.kind() != RecipeKind.CRAFTING || recipe.craftingRecipe() == null)
+        {
+            return;
+        }
+
+        final List<CraftingSlotRequirement> requirements =
+            OptionalRecipeSupport.buildCraftingSlotRequirements(recipe.craftingRecipe().value(), GRID_SIZE);
+        for (int slot = 0; slot < Math.min(GRID_SIZE, savedGrid.size()); slot++)
+        {
+            final ItemStack saved = savedGrid.get(slot);
+            if (!saved.isEmpty() && requirements.get(slot).ingredient().test(saved))
+            {
+                selectedGrid.set(slot, saved.copy());
+                displayGrid.set(slot, saved.copy());
+            }
+        }
+        refreshGridSlotAvailability();
+    }
+
+    /** Updates the fixed breadcrumb strip with the visible tail of the trail. */
+    private void updateBreadcrumbs()
+    {
+        final int visibleCount = Math.min(breadcrumbTrail.size(), MAX_VISIBLE_BREADCRUMBS);
+        for (int i = 0; i < MAX_VISIBLE_BREADCRUMBS; i++)
+        {
+            final boolean visible = i < visibleCount;
+            final ItemIcon icon = breadcrumbIcons.get(i);
+            final Button button = breadcrumbButtons.get(i);
+            icon.setVisible(visible);
+            button.setVisible(visible);
+            button.setEnabled(visible);
+            if (visible)
+            {
+                final CraftNavigationEntry entry = breadcrumbTrail.get(getVisibleBreadcrumbTrailIndex(i));
+                icon.setItem(entry.displayStack());
+                breadcrumbTooltips.get(i).setText(entry.displayStack().getHoverName());
+            }
+            else
+            {
+                icon.setItem(ItemStack.EMPTY);
+            }
+
+            if (i < breadcrumbSeparators.size())
+            {
+                breadcrumbSeparators.get(i).setVisible(i + 1 < visibleCount);
+            }
+        }
+    }
+
+    /** Keeps the root visible while using the remaining slots for the newest levels. */
+    private int getVisibleBreadcrumbTrailIndex(final int visibleIndex)
+    {
+        if (breadcrumbTrail.size() <= MAX_VISIBLE_BREADCRUMBS)
+        {
+            return visibleIndex;
+        }
+        return visibleIndex == 0 ? 0 : breadcrumbTrail.size() - MAX_VISIBLE_BREADCRUMBS + visibleIndex;
     }
 
     /**
@@ -1605,7 +1829,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             return null;
         }
 
-        return level.getRecipeManager().getRecipeFor(RecipeType.CRAFTING, input, level).orElse(null);
+        return ClientRecipeCache.getRecipes().getRecipesFor(RecipeType.CRAFTING, input, level).findFirst().orElse(null);
     }
 
     /**
@@ -1660,7 +1884,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             }
 
             final CraftingInput input = CraftingInput.of(3, 3, List.copyOf(selectedGrid));
-            return recipe.value().assemble(input, level.registryAccess()).copy();
+            return recipe.value().assemble(input).copy();
         }
 
         final RecipeHolder<CraftingRecipe> currentRecipe = getCurrentGridRecipe();
@@ -1670,7 +1894,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             return ItemStack.EMPTY;
         }
 
-        return currentRecipe.value().getResultItem(level.registryAccess()).copy();
+        return VanillaRecipeUtils.getResultItem(currentRecipe.value(), level).copy();
     }
 
     /**
@@ -1902,7 +2126,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             return;
         }
 
-        for (final ItemStack stack : minecraft.player.getInventory().items)
+        for (final ItemStack stack : minecraft.player.getInventory().getNonEquipmentItems())
         {
             if (!stack.isEmpty())
             {
@@ -1927,18 +2151,18 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             return List.of();
         }
 
-        final RecipeManager recipeManager = level.getRecipeManager();
+        final RecipeMap recipeMap = ClientRecipeCache.getRecipes();
         final List<WorkshopRecipe> matches = new ArrayList<>();
 
-        for (final RecipeHolder<CraftingRecipe> recipe : recipeManager.getAllRecipesFor(RecipeType.CRAFTING))
+        for (final RecipeHolder<CraftingRecipe> recipe : recipeMap.byType(RecipeType.CRAFTING))
         {
             final CraftingRecipe craftingRecipe = recipe.value();
-            if (!craftingRecipe.canCraftInDimensions(3, 3))
+            if (!fitsInGrid(craftingRecipe, 3, 3))
             {
                 continue;
             }
 
-            final ItemStack output = craftingRecipe.getResultItem(level.registryAccess());
+            final ItemStack output = VanillaRecipeUtils.getResultItem(craftingRecipe, level);
             if (requestedOutputs.stream().noneMatch(requested -> ItemStackUtils.compareItemStacksIgnoreStackSize(output, requested, false, true)))
             {
                 continue;
@@ -1950,7 +2174,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             }
         }
 
-        for (final RecipeHolder<ArchitectsCutterRecipe> recipe : recipeManager.getAllRecipesFor(ModRecipeTypes.ARCHITECTS_CUTTER.get()))
+        for (final RecipeHolder<ArchitectsCutterRecipe> recipe : recipeMap.byType(ModRecipeTypes.ARCHITECTS_CUTTER.get()))
         {
             for (final ItemStack requested : requestedOutputs)
             {
@@ -1975,6 +2199,32 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     }
 
     /**
+     * Checks whether a crafting recipe can be placed within a grid of the given size.
+     * <p>
+     * {@code CraftingRecipe.canCraftInDimensions(int, int)} no longer exists as of 26.1 -- this
+     * restores the same purely defensive filter (skip recipes that could never fit the workshop's
+     * fixed 3x3 grid) using the surviving APIs: {@link ShapedRecipe#getWidth()}/{@code getHeight()}
+     * for shaped recipes, and the total ingredient-slot count from
+     * {@link VanillaRecipeUtils#getIngredients(Recipe)} for everything else (shapeless and custom
+     * recipe types, including the reflective {@code mctradepost:unique_tag_shapeless} recipes this
+     * grid also emulates).
+     *
+     * @param recipe the recipe to check
+     * @param width the grid width
+     * @param height the grid height
+     * @return true if the recipe can be placed within the given grid dimensions
+     */
+    private static boolean fitsInGrid(final CraftingRecipe recipe, final int width, final int height)
+    {
+        if (recipe instanceof final ShapedRecipe shapedRecipe)
+        {
+            return shapedRecipe.getWidth() <= width && shapedRecipe.getHeight() <= height;
+        }
+
+        return VanillaRecipeUtils.getIngredients(recipe).size() <= width * height;
+    }
+
+    /**
      * Builds a list of matches for the given recipe, with the index of the outer list corresponding to the slot index of the recipe.
      * Each inner list will contain the ItemStorage objects that match the ingredient at the corresponding slot.
      * If the ingredient at the slot cannot be found in the warehouse stock or the player's inventory, the inner list will be empty.
@@ -1989,7 +2239,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         final List<List<ItemStorage>> matches = new ArrayList<>(GRID_SIZE);
         final Map<ItemStorage, Integer> remainingStock = new HashMap<>(warehouseStock);
         final Map<ItemStorage, Integer> remainingPlayerStock = new HashMap<>(playerStock);
-        final Map<ResourceLocation, Set<ResourceLocation>> reservedUniqueItems = new HashMap<>();
+        final Map<Identifier, Set<Identifier>> reservedUniqueItems = new HashMap<>();
 
         for (int i = 0; i < GRID_SIZE; i++)
         {
@@ -1999,7 +2249,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         for (int slot = 0; slot < GRID_SIZE; slot++)
         {
             final CraftingSlotRequirement requirement = slotRequirements.get(slot);
-            if (requirement.ingredient().isEmpty())
+            if (requirement.isEmpty())
             {
                 continue;
             }
@@ -2163,7 +2413,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         final CraftingSlotRequirement requirement,
         final List<ItemStorage> candidates,
         final Map<ItemStorage, Integer> remainingStock,
-        final Map<ResourceLocation, Set<ResourceLocation>> reservedUniqueItems)
+        final Map<Identifier, Set<Identifier>> reservedUniqueItems)
     {
         for (final ItemStorage candidate : candidates)
         {
@@ -2255,26 +2505,27 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
     }
 
     /**
-     * Gets a display stack from an ingredient, used for displaying the ingredient in the JEI GUI.
-     * The display stack is a copy of the first non-empty stack in the ingredient's items list, with its count set to 1.
-     * If the ingredient has no non-empty stacks, an empty ItemStack is returned.
+     * Gets a display stack from an ingredient, used for displaying the ingredient in the EMI GUI.
+     * The display stack is a copy of the first item the ingredient accepts, with its count set to 1.
+     * If the ingredient is null (an empty {@link CraftingSlotRequirement} slot) or accepts no items,
+     * an empty ItemStack is returned.
+     * <p>
+     * {@code Ingredient.getItems()} no longer exists as of 26.1; {@code Ingredient.items()} (returning
+     * a {@code Stream<Holder<Item>>}) is its replacement.
      *
-     * @param ingredient the ingredient to get a display stack for
+     * @param ingredient the ingredient to get a display stack for, or null for an empty slot
      * @return a display stack for the ingredient
      */
-    private ItemStack getIngredientDisplayStack(final Ingredient ingredient)
+    private ItemStack getIngredientDisplayStack(final @Nullable Ingredient ingredient)
     {
-        for (final ItemStack stack : ingredient.getItems())
+        if (ingredient == null)
         {
-            if (!stack.isEmpty())
-            {
-                final ItemStack displayStack = stack.copy();
-                displayStack.setCount(1);
-                return displayStack;
-            }
+            return ItemStack.EMPTY;
         }
 
-        return ItemStack.EMPTY;
+        return ingredient.items().findFirst()
+            .map(holder -> new ItemStack(holder))
+            .orElse(ItemStack.EMPTY);
     }
 
     /**
@@ -2317,7 +2568,13 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
      */
     private ItemStack buildDomumOutputForRequest(final ArchitectsCutterRecipe recipe, final ItemStack requested, final Level level)
     {
-        ItemStack recipeResult = recipe.getResultItem(level.registryAccess());
+        // Domum upstream port/26.1 dropped ArchitectsCutterRecipe#getResultItem; build the same stack from the recipe data.
+        ItemStack recipeResult = ItemStack.EMPTY;
+        if (recipe.getBlock() instanceof com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock)
+        {
+            recipeResult = new ItemStack(recipe.getBlock());
+            recipeResult.applyComponents(recipe.getComponentPatch());
+        }
 
         if (recipeResult == null || recipeResult.isEmpty())
         {
@@ -2400,7 +2657,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
         }
 
         final MaterialTextureData textureData = MaterialTextureData.readFromItemStack(recipe.output());
-        final Map<ResourceLocation, Block> materials = textureData.getTexturedComponents();
+        final Map<Identifier, Block> materials = textureData.components();
         final List<DomumSlotRequirement> requirements = new ArrayList<>(components.size());
         for (final IMateriallyTexturedBlockComponent component : components)
         {
@@ -2486,7 +2743,7 @@ public class WindowWorkshopModule extends AbstractModuleWindow<WorkshopModuleVie
             return ItemStack.EMPTY;
         }
 
-        return recipe.domumRecipe().value().assemble(recipeInput, level.registryAccess()).copy();
+        return recipe.domumRecipe().value().assemble(recipeInput).copy();
     }
 
     /**

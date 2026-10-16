@@ -12,7 +12,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -22,7 +22,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public record SetWorkshopIncludePlayerInventoryMessage(BlockPos buildingPos, boolean includePlayerInventory) implements IServerboundPayload
 {
     @SuppressWarnings("null")
-    public static final Type<SetWorkshopIncludePlayerInventoryMessage> ID = new Type<>(ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "set_workshop_include_player_inventory"));
+    public static final Type<SetWorkshopIncludePlayerInventoryMessage> ID = new Type<>(Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "set_workshop_include_player_inventory"));
     
     @SuppressWarnings("null")
     public static final StreamCodec<RegistryFriendlyByteBuf, SetWorkshopIncludePlayerInventoryMessage> STREAM_CODEC = StreamCodec.composite(

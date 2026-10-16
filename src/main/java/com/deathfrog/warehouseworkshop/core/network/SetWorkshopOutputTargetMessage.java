@@ -13,7 +13,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
@@ -23,7 +23,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public record SetWorkshopOutputTargetMessage(BlockPos buildingPos, int outputTargetId) implements IServerboundPayload
 {
     @SuppressWarnings("null")
-    public static final Type<SetWorkshopOutputTargetMessage> ID = new Type<>(ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "set_workshop_output_target"));
+    public static final Type<SetWorkshopOutputTargetMessage> ID = new Type<>(Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "set_workshop_output_target"));
     
     @SuppressWarnings("null")
     public static final StreamCodec<RegistryFriendlyByteBuf, SetWorkshopOutputTargetMessage> STREAM_CODEC = StreamCodec.composite(

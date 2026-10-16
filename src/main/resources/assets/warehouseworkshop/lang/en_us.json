@@ -7,7 +7,7 @@
   "com.warehouseworkshop.core.gui.workshop.request": "Request",
   "com.warehouseworkshop.core.gui.workshop.request_item": "Request Item",
   "com.warehouseworkshop.core.gui.workshop.search_item": "Search Item",
-  "com.warehouseworkshop.core.gui.workshop.jei_search_item": "JEI Search Item Selected",
+  "com.warehouseworkshop.core.gui.workshop.jei_search_item": "EMI Search Item Selected",
   "com.warehouseworkshop.core.gui.workshop.request.none": "No request selected.",
   "com.warehouseworkshop.core.gui.workshop.recipe": "Recipe",
   "com.warehouseworkshop.core.gui.workshop.recipe.none": "No recipe selected.",
@@ -15,7 +15,7 @@
   "com.warehouseworkshop.core.gui.workshop.recipe.index": "Recipe %1$s/%2$s",
   "com.warehouseworkshop.core.gui.workshop.output": "Output",
   "com.warehouseworkshop.core.gui.workshop.select": "Select",
-  "com.warehouseworkshop.core.gui.workshop.status.selectrequest": "Pick an open request, drag a JEI recipe, or shift-click a JEI item to begin.",
+  "com.warehouseworkshop.core.gui.workshop.status.selectrequest": "Pick an open request, drag an EMI recipe, or shift-click an EMI item to begin.",
   "com.warehouseworkshop.core.gui.workshop.status.norecipe": "Pick a matching recipe first.",
   "com.warehouseworkshop.core.gui.workshop.status.ready": "Ready to craft from warehouse stock.",
   "com.warehouseworkshop.core.gui.workshop.status.ready.include_player": "Ready to craft from warehouse and player stock.",
@@ -32,7 +32,7 @@
   "com.warehouseworkshop.core.gui.workshop.slot_status.limited": "Available for a partial request.",
   "com.warehouseworkshop.core.gui.workshop.slot_status.missing": "Missing required ingredient.",
   "com.warehouseworkshop.core.gui.workshop.request.tooltip": "Select Recipe based on current colony requests.",
-  "com.warehouseworkshop.core.gui.workshop.output.tooltip": "Drag a JEI result here, or shift-click a JEI item, to select a craftable recipe. Drag JEI ingredients into the grid.",
+  "com.warehouseworkshop.core.gui.workshop.output.tooltip": "Drag an EMI result here, or shift-click an EMI item, to select a craftable recipe. Drag EMI ingredients into the grid.",
   "com.warehouseworkshop.core.gui.workshop.craft_amount.label": "Craft Quantity",
   "com.warehouseworkshop.core.gui.workshop.output_target.label": "Craft To",
   "com.warehouseworkshop.core.gui.workshop.output_target.inventory": "Inventory",
@@ -44,5 +44,6 @@
   "com.warehouseworkshop.core.gui.workshop.status.settings_loading": "Loading your workshop settings...",
   "com.warehouseworkshop.core.gui.workshop.status.invalid_count": "Enter a craft quantity greater than 0.",
   "com.warehouseworkshop.core.gui.workshop.craft.tooltip": "Craft the selected recipe.",
-  "com.warehouseworkshop.core.gui.workshop.craftall.tooltip": "Craft the selected recipe as many times as specified above."
+  "com.warehouseworkshop.core.gui.workshop.craftall.tooltip": "Craft the selected recipe as many times as specified above.",
+  "com.warehouseworkshop.research_supplies.delivery_interrupted": "Research supply delivery for %1$s was cancelled or interrupted while supplies were still missing. It may now be requested again."
 }

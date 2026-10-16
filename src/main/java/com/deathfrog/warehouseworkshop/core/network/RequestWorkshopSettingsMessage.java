@@ -11,7 +11,7 @@ import com.minecolonies.api.colony.buildings.IBuilding;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -22,7 +22,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 public record RequestWorkshopSettingsMessage(BlockPos buildingPos) implements IServerboundPayload
 {
     @SuppressWarnings("null")
-    public static final Type<RequestWorkshopSettingsMessage> ID = new Type<>(ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "request_workshop_settings"));
+    public static final Type<RequestWorkshopSettingsMessage> ID = new Type<>(Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "request_workshop_settings"));
 
     @SuppressWarnings("null")
     public static final StreamCodec<RegistryFriendlyByteBuf, RequestWorkshopSettingsMessage> STREAM_CODEC = StreamCodec.composite(

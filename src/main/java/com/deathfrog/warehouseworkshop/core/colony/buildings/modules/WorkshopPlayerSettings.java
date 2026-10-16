@@ -1,5 +1,7 @@
 package com.deathfrog.warehouseworkshop.core.colony.buildings.modules;
 
+import java.util.Optional;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import com.deathfrog.warehouseworkshop.WarehouseWorkshopMod;
@@ -7,7 +9,6 @@ import com.deathfrog.warehouseworkshop.core.colony.buildings.modules.WorkshopMod
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.player.Player;
 
 /**
@@ -68,8 +69,8 @@ public record WorkshopPlayerSettings(OutputTarget outputTarget, boolean includeP
     private static WorkshopPlayerSettings fromTag(final CompoundTag tag)
     {
         return new WorkshopPlayerSettings(
-            OutputTarget.byId(tag.getInt(TAG_OUTPUT_TARGET)),
-            tag.getBoolean(TAG_INCLUDE_PLAYER_INVENTORY));
+            OutputTarget.byId(tag.getIntOr(TAG_OUTPUT_TARGET, DEFAULT.outputTarget().getId())),
+            tag.getBooleanOr(TAG_INCLUDE_PLAYER_INVENTORY, DEFAULT.includePlayerInventory()));
     }
 
     /**
@@ -116,7 +117,7 @@ public record WorkshopPlayerSettings(OutputTarget outputTarget, boolean includeP
             return null;
         }
 
-        final CompoundTag dimensionSettings = getOrCreateChild(dimensions, player.level().dimension().location().toString() + "", create);
+        final CompoundTag dimensionSettings = getOrCreateChild(dimensions, player.level().dimension().identifier().toString() + "", create);
         if (dimensionSettings == null)
         {
             return null;
@@ -136,9 +137,14 @@ public record WorkshopPlayerSettings(OutputTarget outputTarget, boolean includeP
     @Nullable
     private static CompoundTag getOrCreateChild(final CompoundTag parent, final @Nonnull String key, final boolean create)
     {
-        if (parent.contains(key, Tag.TAG_COMPOUND))
+        // CompoundTag.contains(String, byte) (tag-type-checked) and getCompound(String) (returning
+        // CompoundTag directly) no longer exist as of 26.1 -- getCompound(String) now returns
+        // Optional<CompoundTag>, empty both when the key is absent and when it exists as a
+        // differently-typed tag, which already covers the old two-argument contains() check.
+        final Optional<CompoundTag> existing = parent.getCompound(key);
+        if (existing.isPresent())
         {
-            return parent.getCompound(key);
+            return existing.get();
         }
 
         if (!create)

@@ -2,7 +2,7 @@ plugins {
     id 'java-library'
     id 'idea'
     id 'maven-publish'
-    id 'net.neoforged.gradle.userdev' version '7.1.21'
+    id 'net.neoforged.gradle.userdev' version '7.1.38'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -27,19 +27,11 @@ sourceSets.main.resources {
 }
 
 repositories {
+    // Local artifacts (our ported 26.1.2 MineColonies stack) must take precedence over remote snapshots.
     mavenLocal()
-    flatDir {
-        dirs '../Minecolonies/build/libs' // adjust path as needed
-    }
     maven {
         name 'LDTTeam - Modding'
         url 'https://ldtteam.jfrog.io/ldtteam/modding/'
-    } 
-    maven {
-        // location of the maven that hosts JEI files since January 2023
-        name = "Jared's maven"
-        url = "https://maven.blamejared.com/"
-
     }
 }
 
@@ -47,8 +39,8 @@ base {
     archivesName = mod_id
 }
 
-// Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+// Mojang ships Java 25 to end users in 26.1.2, so mods should target Java 25.
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
 //minecraft.accessTransformers.file rootProject.file('src/main/resources/META-INF/accesstransformer.cfg')
 //minecraft.accessTransformers.entry public net.minecraft.client.Minecraft textureManager # textureManager
@@ -70,6 +62,8 @@ runs {
         // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
         systemProperty 'forge.logging.console.level', 'debug'
 
+        workingDirectory project.layout.projectDirectory.dir('run').dir(name)
+
         modSource project.sourceSets.main
     }
 
@@ -90,10 +84,11 @@ runs {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
     }
 
-    data {
-        // example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it
-        // workingDirectory project.file('run-data')
-
+    // NeoGradle 7.1.x / NeoForge 26.1.2 split the old 'data' run type into 'clientData' and
+    // 'serverData'; only client-side data generation is configured here, matching what this mod
+    // previously ran under the single 'data' run type (this mod ships no datagen providers, so
+    // this run type is unused at present but kept consistent with the rest of the 26.1.2 style).
+    clientData {
         // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
         arguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
     }
@@ -116,27 +111,39 @@ dependencies {
     // For all intends and purposes: You can treat this dependency as if it is a normal library you would use.
     implementation "net.neoforged:neoforge:${neo_version}"
 
-    compileOnly name: 'minecolonies-1.1.1362-1.21.1-snapshot'
-    localRuntime files ('../Minecolonies/build/libs/minecolonies-1.1.1362-1.21.1-snapshot.jar')
-    
-    compileOnly name: 'multipiston-1.2.58-1.21.1'
-    localRuntime files ('../Minecolonies/build/libs/multipiston-1.2.58-1.21.1.jar')
+    // Required -- our locally ported 26.1.2 LDT stack.
+    // minecolonies is not published to mavenLocal by its own build, so it is consumed directly
+    // from its build/libs output instead, matching the pattern already proven working in
+    // ../mctradepost-retro's build.gradle. warehouseWorkshop lives at the same depth below
+    // /root/home/forks (colonial-addons/warehouseWorkshop), so ../../MineColonies resolves to
+    // /root/home/forks/MineColonies exactly as it does for mctradepost-retro.
+    compileOnly files("$rootDir/../../MineColonies/build/libs/minecolonies-${minecolonies_version}.jar")
+    localRuntime files("$rootDir/../../MineColonies/build/libs/minecolonies-${minecolonies_version}.jar")
 
-    compileOnly name: 'blockui-1.0.211-1.21.1-snapshot'  // use the actual filename without .jar
-    localRuntime files('../Minecolonies/build/libs/blockui-1.0.211-1.21.1-snapshot.jar')    
+    compileOnly "com.ldtteam:structurize:${structurize_version}"
+    localRuntime "com.ldtteam:structurize:${structurize_version}"
 
-    compileOnly name: 'structurize-1.0.832-1.21.1-snapshot'  // use the actual filename without .jar
-    localRuntime files('../Minecolonies/build/libs/structurize-1.0.832-1.21.1-snapshot.jar')    
+    compileOnly "com.ldtteam:multipiston:${multipiston_version}"
+    localRuntime "com.ldtteam:multipiston:${multipiston_version}"
 
-    compileOnly name: 'domum-ornamentum-1.0.234-snapshot-main'  // use the actual filename without .jar
-    localRuntime files('../Minecolonies/build/libs/domum-ornamentum-1.0.234-snapshot-main.jar') 
+    compileOnly "com.ldtteam:blockui:${blockui_version}"
+    localRuntime "com.ldtteam:blockui:${blockui_version}"
 
-    // JEI for compile-time access
-    compileOnly("mezz.jei:jei-1.21.1-neoforge-api:19.27.0.336")
-    compileOnly("mezz.jei:jei-1.21.1-neoforge:19.27.0.336")
+    compileOnly "com.ldtteam:domum-ornamentum:${domumornamentum_version}"
+    localRuntime "com.ldtteam:domum-ornamentum:${domumornamentum_version}"
 
-    // Runtime for dev only (so it loads in runClient/runServer)
-    localRuntime("mezz.jei:jei-1.21.1-neoforge:19.27.0.336")
+    // Native EMI integration. Built locally to mavenLocal() from the port26.1 branch of
+    // https://github.com/MehanikTMYT/emi (no official EMI release exists for MC 26.1 yet).
+    // Pinned to the same commit mctradepost-retro resolves to at runtime (see the emiVersion
+    // comment in gradle.properties there): domum-ornamentum transitively declares this newer
+    // commit, and Gradle's default conflict resolution wins with it on the runtime classpath
+    // regardless of what compileOnly declares, so this pin matches what actually loads.
+    compileOnly("dev.emi:emi-neoforge:${emiVersion}:api") {
+        transitive = false
+    }
+    if (project.findProperty("runWithEmi")?.toString()?.toBoolean() == true) {
+        localRuntime "dev.emi:emi-neoforge:${emiVersion}"
+    }
 
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -156,11 +163,14 @@ tasks.withType(ProcessResources).configureEach {
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
             neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
             loader_version_range   : loader_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
             mod_version            : mod_version,
+            emiVersion             : emiVersion,
+            minecolonies_version   : minecolonies_version,
     ]
     inputs.properties replaceProperties
 

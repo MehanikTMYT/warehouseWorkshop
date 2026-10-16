@@ -28,8 +28,8 @@ import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.core.client.gui.AbstractModuleWindow;
 import com.minecolonies.core.colony.requestsystem.requests.StandardRequests;
 
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 import static com.minecolonies.api.util.constant.WindowConstants.DELIVERY_IMAGE;
@@ -44,6 +44,10 @@ import static com.minecolonies.core.colony.requestsystem.requests.AbstractReques
  */
 public class WindowWorkshopSelectRequest extends AbstractModuleWindow<WorkshopModuleView>
 {
+    private static final String WINDOW_LAYOUT = "gui/layouthuts/layoutselectworkshoprequest.xml";
+    private static final String REQUESTS_LIST_ID = "requests";
+    private static final String SELECT_BUTTON_ID = "select";
+    private static final String CANCEL_BUTTON_ID = "cancel";
     private final Predicate<IRequest<?>> predicate;
     private final Consumer<IRequest<?>> reopenWithRequest;
     private final ScrollingList requestsList;
@@ -55,13 +59,13 @@ public class WindowWorkshopSelectRequest extends AbstractModuleWindow<WorkshopMo
         final Predicate<IRequest<?>> predicate,
         final Consumer<@Nullable IRequest<?>> reopenWithRequest)
     {
-        super(moduleView, ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "gui/layouthuts/layoutselectworkshoprequest.xml"));
+        super(moduleView, Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, WINDOW_LAYOUT));
         this.predicate = predicate;
         this.reopenWithRequest = reopenWithRequest;
-        this.requestsList = findPaneOfTypeByID("requests", ScrollingList.class);
+        this.requestsList = findPaneOfTypeByID(REQUESTS_LIST_ID, ScrollingList.class);
 
-        registerButton("select", this::select);
-        registerButton("cancel", this::cancel);
+        registerButton(SELECT_BUTTON_ID, this::select);
+        registerButton(CANCEL_BUTTON_ID, this::cancel);
     }
 
     @Override
@@ -76,7 +80,7 @@ public class WindowWorkshopSelectRequest extends AbstractModuleWindow<WorkshopMo
     public void onUpdate()
     {
         super.onUpdate();
-        if (!Screen.hasShiftDown())
+        if (!Minecraft.getInstance().hasShiftDown())
         {
             lifeCount++;
         }

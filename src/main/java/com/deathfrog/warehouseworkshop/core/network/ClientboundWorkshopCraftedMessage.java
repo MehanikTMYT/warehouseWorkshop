@@ -14,7 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -27,7 +27,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 public record ClientboundWorkshopCraftedMessage(BlockPos buildingPos, List<ItemStack> warehouseStock, List<ItemStack> playerStock) implements CustomPacketPayload
 {
     @SuppressWarnings("null")
-    public static final Type<ClientboundWorkshopCraftedMessage> ID = new Type<>(ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "workshop_crafted"));
+    public static final Type<ClientboundWorkshopCraftedMessage> ID = new Type<>(Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "workshop_crafted"));
     
     @SuppressWarnings("null")
     public static final StreamCodec<RegistryFriendlyByteBuf, ClientboundWorkshopCraftedMessage> STREAM_CODEC = StreamCodec.composite(

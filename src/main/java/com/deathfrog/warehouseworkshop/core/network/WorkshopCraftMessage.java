@@ -26,15 +26,19 @@ import com.ldtteam.domumornamentum.recipe.architectscutter.ArchitectsCutterRecip
 import com.ldtteam.domumornamentum.recipe.architectscutter.ArchitectsCutterRecipeInput;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.crafting.VanillaRecipeUtils;
 import com.minecolonies.api.util.InventoryUtils;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Player;
@@ -52,7 +56,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 /**
  * Performs a validated warehouse-backed craft on the server.
  */
-public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, int craftCount, int requestedOutputCount, int craftType, ResourceLocation recipeId) implements IServerboundPayload
+public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, int craftCount, int requestedOutputCount, int craftType, Identifier recipeId) implements IServerboundPayload
 {
     private static final int CRAFTING_GRID_WIDTH = 3;
     private static final int CRAFTING_GRID_HEIGHT = 3;
@@ -61,7 +65,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
     public static final int CRAFT_TYPE_DOMUM = 1;
 
     @SuppressWarnings("null")
-    public static final Type<WorkshopCraftMessage> ID = new Type<>(ResourceLocation.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "workshop_craft"));
+    public static final Type<WorkshopCraftMessage> ID = new Type<>(Identifier.fromNamespaceAndPath(WarehouseWorkshopMod.MODID, "workshop_craft"));
     
     @SuppressWarnings("null")
     public static final StreamCodec<RegistryFriendlyByteBuf, WorkshopCraftMessage> STREAM_CODEC = StreamCodec.composite(
@@ -75,7 +79,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         WorkshopCraftMessage::requestedOutputCount,
         ByteBufCodecs.INT,
         WorkshopCraftMessage::craftType,
-        ResourceLocation.STREAM_CODEC,
+        Identifier.STREAM_CODEC,
         WorkshopCraftMessage::recipeId,
         WorkshopCraftMessage::new);
 
@@ -145,7 +149,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
 
         if (craftType != CRAFT_TYPE_CRAFTING)
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
@@ -171,20 +175,20 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
             CRAFTING_GRID_HEIGHT,
             normalizedGrid);
         final CraftingInput input = positionedInput.input();
-        final Optional<RecipeHolder<?>> recipe = player.level().getRecipeManager().byKey(recipeId);
+        final Optional<RecipeHolder<?>> recipe = ((ServerLevel) player.level()).recipeAccess().byKey(ResourceKey.create(Registries.RECIPE, recipeId));
         if (recipe.isEmpty()
-            || !recipe.get().id().equals(recipeId)
+            || !recipe.get().id().identifier().equals(recipeId)
             || !(recipe.get().value() instanceof final CraftingRecipe craftingRecipe)
             || !craftingRecipe.matches(input, player.level()))
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
         final List<CraftingIngredientRequirement> requiredIngredients = buildCraftingIngredientRequirements(craftingRecipe, positionedInput);
         if (requiredIngredients.size() != input.ingredientCount())
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
         final WorkshopPlayerSettings settings = WorkshopPlayerSettings.get(player, buildingPos);
@@ -193,12 +197,12 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final IItemHandler playerInventory = new PlayerMainInvWrapper(player.getInventory());
         if (!hasCraftingIngredientRequirements(requiredIngredients, warehouseInventory, playerInventory, includePlayerInventory))
         {
-            player.displayClientMessage(getMissingStatusText(includePlayerInventory), true);
+            player.sendOverlayMessage(getMissingStatusText(includePlayerInventory));
             sendCraftingContentsSnapshot(player, warehouseInventory, playerInventory);
             return;
         }
 
-        final ItemStack craftedResult = craftingRecipe.assemble(input, player.level().registryAccess()).copy();
+        final ItemStack craftedResult = craftingRecipe.assemble(input).copy();
         final List<ItemStack> remainingItems = craftingRecipe.getRemainingItems(input);
         if (remainingItems.size() != input.size())
         {
@@ -207,7 +211,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
                 recipeId,
                 remainingItems.size(),
                 input.size());
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
@@ -268,12 +272,12 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
 
         if (crafted <= 0)
         {
-            player.displayClientMessage(getMissingStatusText(includePlayerInventory), true);
+            player.sendOverlayMessage(getMissingStatusText(includePlayerInventory));
             sendCraftingContentsSnapshot(player, warehouseInventory, playerInventory);
             return;
         }
 
-        player.displayClientMessage(getCraftedStatusText(crafted, craftedResult), true);
+        player.sendOverlayMessage(getCraftedStatusText(crafted, craftedResult));
         sendCraftingContentsSnapshot(player, warehouseInventory, playerInventory);
     }
 
@@ -291,22 +295,23 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final WorkshopModule module,
         final List<ItemStack> normalizedGrid)
     {
-        final Optional<RecipeHolder<ArchitectsCutterRecipe>> recipe = player.level().getRecipeManager()
-            .getAllRecipesFor(ModRecipeTypes.ARCHITECTS_CUTTER.get())
+        final Optional<RecipeHolder<ArchitectsCutterRecipe>> recipe = VanillaRecipeUtils.getAllRecipesFor(
+                ((ServerLevel) player.level()).recipeAccess(),
+                ModRecipeTypes.ARCHITECTS_CUTTER.get())
             .stream()
-            .filter(candidate -> candidate.id().equals(recipeId))
+            .filter(candidate -> candidate.id().identifier().equals(recipeId))
             .findFirst();
 
         if (recipe.isEmpty())
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
         final List<IMateriallyTexturedBlockComponent> components = getDomumComponents(recipe.get().value());
         if (components.isEmpty() || components.size() > 2)
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
@@ -314,14 +319,14 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final ArchitectsCutterRecipeInput input = buildDomumInput(baseIngredients);
         if (!recipe.get().value().matches(input, player.level()))
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
-        final ItemStack craftedResult = recipe.get().value().assemble(input, player.level().registryAccess()).copy();
+        final ItemStack craftedResult = recipe.get().value().assemble(input).copy();
         if (craftedResult.isEmpty())
         {
-            player.displayClientMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"), true);
+            player.sendOverlayMessage(Component.translatable("com.warehouseworkshop.core.gui.workshop.status.invalid"));
             return;
         }
 
@@ -331,7 +336,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final IItemHandler playerInventory = new PlayerMainInvWrapper(player.getInventory());
         if (!hasCraftingIngredients(copyIngredients(baseIngredients), warehouseInventory, playerInventory, includePlayerInventory))
         {
-            player.displayClientMessage(getMissingStatusText(includePlayerInventory), true);
+            player.sendOverlayMessage(getMissingStatusText(includePlayerInventory));
             sendCraftingContentsSnapshot(player, warehouseInventory, playerInventory);
             return;
         }
@@ -357,12 +362,12 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
 
         if (crafted <= 0)
         {
-            player.displayClientMessage(getMissingStatusText(includePlayerInventory), true);
+            player.sendOverlayMessage(getMissingStatusText(includePlayerInventory));
             sendCraftingContentsSnapshot(player, warehouseInventory, playerInventory);
             return;
         }
 
-        player.displayClientMessage(getCraftedStatusText(crafted, craftedResult), true);
+        player.sendOverlayMessage(getCraftedStatusText(crafted, craftedResult));
         sendCraftingContentsSnapshot(player, warehouseInventory, playerInventory);
     }
 
@@ -509,7 +514,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final List<CraftingSlotRequirement> unmatchedRequirements = new ArrayList<>();
         for (final CraftingSlotRequirement requirement : slotRequirements)
         {
-            if (!requirement.ingredient().isEmpty())
+            if (!requirement.isEmpty())
             {
                 unmatchedRequirements.add(requirement);
             }
@@ -564,9 +569,9 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
             final int denseRecipeSlot = PositionedCraftingSlots.toShapedRecipeSlot(localSlot, input.width(), mirrored);
             final int recipeSlot = ((denseRecipeSlot / input.width()) * CRAFTING_GRID_WIDTH)
                 + (denseRecipeSlot % input.width());
-            final Ingredient ingredient = slotRequirements.get(recipeSlot).ingredient();
+            final CraftingSlotRequirement requirement = slotRequirements.get(recipeSlot);
             final ItemStack stack = input.getItem(localSlot);
-            if (ingredient.isEmpty() != stack.isEmpty() || (!ingredient.isEmpty() && !ingredient.test(stack)))
+            if (requirement.isEmpty() != stack.isEmpty() || (!requirement.isEmpty() && !requirement.ingredient().test(stack)))
             {
                 return false;
             }
@@ -694,7 +699,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final boolean includePlayerInventory)
     {
         final List<ItemStack> available = snapshotInventory(warehouseInventory);
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems = new HashMap<>();
+        final Map<Identifier, Set<Identifier>> usedUniqueItems = new HashMap<>();
         if (includePlayerInventory)
         {
             available.addAll(snapshotInventory(playerInventory));
@@ -780,7 +785,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         final IItemHandler playerInventory,
         final boolean includePlayerInventory)
     {
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems = new HashMap<>();
+        final Map<Identifier, Set<Identifier>> usedUniqueItems = new HashMap<>();
         final List<ExtractedCraftingIngredient> extractedIngredients = new ArrayList<>(requirements.size());
         for (final CraftingIngredientRequirement requirement : requirements)
         {
@@ -968,7 +973,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
     private static int findMatchingStackIndex(
         final List<ItemStack> available,
         final CraftingIngredientRequirement requirement,
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems)
+        final Map<Identifier, Set<Identifier>> usedUniqueItems)
     {
         for (int i = 0; i < available.size(); i++)
         {
@@ -1003,7 +1008,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
     private static ItemStack removeMatchingIngredient(
         final IItemHandler inventory,
         final CraftingIngredientRequirement requirement,
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems,
+        final Map<Identifier, Set<Identifier>> usedUniqueItems,
         final boolean ingredientFallback)
     {
         ItemStack preferredStack = requirement.preferredStack();
@@ -1041,7 +1046,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
     private static int findMatchingInventorySlot(
         final IItemHandler inventory,
         final CraftingIngredientRequirement requirement,
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems,
+        final Map<Identifier, Set<Identifier>> usedUniqueItems,
         final boolean ingredientFallback)
     {
         for (int slot = 0; slot < inventory.getSlots(); slot++)
@@ -1090,14 +1095,14 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
     private static boolean canUseUniqueIngredient(
         final CraftingIngredientRequirement requirement,
         final ItemStack stack,
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems)
+        final Map<Identifier, Set<Identifier>> usedUniqueItems)
     {
         if (requirement.uniqueGroup() == null)
         {
             return true;
         }
 
-        final ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        final Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return itemId != null && !usedUniqueItems.getOrDefault(requirement.uniqueGroup(), Set.of()).contains(itemId);
     }
 
@@ -1113,7 +1118,7 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
     private static void markUniqueIngredientUse(
         final CraftingIngredientRequirement requirement,
         final ItemStack stack,
-        final Map<ResourceLocation, Set<ResourceLocation>> usedUniqueItems)
+        final Map<Identifier, Set<Identifier>> usedUniqueItems)
     {
         if (requirement.uniqueGroup() == null)
         {
@@ -1121,14 +1126,14 @@ public record WorkshopCraftMessage(BlockPos buildingPos, List<ItemStack> grid, i
         }
 
         @SuppressWarnings("null")
-        final ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        final Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (itemId != null)
         {
             usedUniqueItems.computeIfAbsent(requirement.uniqueGroup(), ignored -> new HashSet<>()).add(itemId);
         }
     }
 
-    private record CraftingIngredientRequirement(int gridSlot, Ingredient ingredient, ItemStack preferredStack, ResourceLocation uniqueGroup)
+    private record CraftingIngredientRequirement(int gridSlot, Ingredient ingredient, ItemStack preferredStack, Identifier uniqueGroup)
     {
     }
 

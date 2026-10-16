@@ -8,23 +8,24 @@ import java.util.Optional;
 
 import org.jetbrains.annotations.Nullable;
 
+import com.minecolonies.api.crafting.VanillaRecipeUtils;
+
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
 import net.minecraft.world.item.crafting.ShapedRecipe;
-import net.minecraft.world.item.crafting.ShapelessRecipe;
 
 /**
  * Soft integrations for optional recipe implementations from other mods.
  */
 public final class OptionalRecipeSupport
 {
-    private static final ResourceLocation UNIQUE_TAG_SHAPELESS_SERIALIZER_ID =
-        ResourceLocation.fromNamespaceAndPath("mctradepost", "unique_tag_shapeless");
+    private static final Identifier UNIQUE_TAG_SHAPELESS_SERIALIZER_ID =
+        Identifier.fromNamespaceAndPath("mctradepost", "unique_tag_shapeless");
 
     private OptionalRecipeSupport()
     {
@@ -45,29 +46,36 @@ public final class OptionalRecipeSupport
     private static List<CraftingSlotRequirement> buildDefaultRequirements(final CraftingRecipe recipe, final int gridSize)
     {
         final List<CraftingSlotRequirement> slots = new ArrayList<>(Collections.nCopies(gridSize, CraftingSlotRequirement.empty()));
-        final List<Ingredient> ingredients = recipe.getIngredients();
 
+        // Since 26.1, Recipe no longer exposes a generic getIngredients() (see
+        // com.minecolonies.api.crafting.VanillaRecipeUtils's own javadoc on the same removal).
+        // ShapedRecipe kept its own getIngredients() but it now returns one Optional<Ingredient>
+        // per dense width*height slot (empty slots are Optional.empty()) instead of a compacted
+        // list, so the shaped branch below unwraps that directly for exact positional accuracy.
+        // Every other CraftingRecipe (ShapelessRecipe included -- it lost its own getIngredients()
+        // entirely) falls back to VanillaRecipeUtils.getIngredients(recipe), which reads
+        // recipe.placementInfo().ingredients() -- the same flat, order-preserving list
+        // ShapelessRecipe#getIngredients() used to return directly.
         if (recipe instanceof final ShapedRecipe shapedRecipe)
         {
             final int width = shapedRecipe.getWidth();
             final int height = shapedRecipe.getHeight();
+            final List<Optional<Ingredient>> shapedIngredients = shapedRecipe.getIngredients();
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
                 {
-                    slots.set((y * 3) + x, new CraftingSlotRequirement(ingredients.get((y * width) + x), null));
+                    final Optional<Ingredient> ingredient = shapedIngredients.get((y * width) + x);
+                    if (ingredient.isPresent())
+                    {
+                        slots.set((y * 3) + x, new CraftingSlotRequirement(ingredient.get(), null));
+                    }
                 }
-            }
-        }
-        else if (recipe instanceof final ShapelessRecipe shapelessRecipe)
-        {
-            for (int i = 0; i < Math.min(gridSize, shapelessRecipe.getIngredients().size()); i++)
-            {
-                slots.set(i, new CraftingSlotRequirement(shapelessRecipe.getIngredients().get(i), null));
             }
         }
         else
         {
+            final List<Ingredient> ingredients = VanillaRecipeUtils.getIngredients(recipe);
             for (int i = 0; i < Math.min(gridSize, ingredients.size()); i++)
             {
                 slots.set(i, new CraftingSlotRequirement(ingredients.get(i), null));
@@ -123,7 +131,7 @@ public final class OptionalRecipeSupport
             return Optional.empty();
         }
 
-        final ResourceLocation serializerId = BuiltInRegistries.RECIPE_SERIALIZER.getKey(serializer);
+        final Identifier serializerId = BuiltInRegistries.RECIPE_SERIALIZER.getKey(serializer);
         if (!UNIQUE_TAG_SHAPELESS_SERIALIZER_ID.equals(serializerId))
         {
             return Optional.empty();
@@ -149,7 +157,10 @@ public final class OptionalRecipeSupport
 
             @SuppressWarnings("unchecked")
             final TagKey<Item> tag = (TagKey<Item>) rawTag;
-            final Ingredient tagIngredient = Ingredient.of(tag);
+            // Ingredient.of(TagKey) no longer exists as of 26.1.2; resolve the tag to its Holder
+            // first, matching the pattern mctradepost's own UniqueTagShapelessRecipe.getIngredients()
+            // already uses for the same problem.
+            final Ingredient tagIngredient = Ingredient.of(BuiltInRegistries.ITEM.getOrThrow(tag));
             if (tagIngredient.isEmpty())
             {
                 return Optional.empty();
@@ -163,11 +174,26 @@ public final class OptionalRecipeSupport
         }
     }
 
-    public record CraftingSlotRequirement(Ingredient ingredient, @Nullable ResourceLocation uniqueGroup)
+    /**
+     * A single crafting-grid slot's ingredient requirement.
+     * <p>
+     * {@code Ingredient.EMPTY} no longer exists as of 26.1 -- {@code Ingredient}'s constructor now
+     * throws {@code UnsupportedOperationException} for an empty value set, so an empty ingredient is
+     * simply not constructible anymore (matching how {@code ShapedRecipe#getIngredients()} itself now
+     * represents blank grid cells as {@code Optional.empty()} rather than a sentinel Ingredient
+     * instance). {@code ingredient} is therefore {@code null} for an empty slot; use {@link #isEmpty()}
+     * rather than calling {@code ingredient().isEmpty()} directly.
+     */
+    public record CraftingSlotRequirement(@Nullable Ingredient ingredient, @Nullable Identifier uniqueGroup)
     {
         public static CraftingSlotRequirement empty()
         {
-            return new CraftingSlotRequirement(Ingredient.EMPTY, null);
+            return new CraftingSlotRequirement(null, null);
+        }
+
+        public boolean isEmpty()
+        {
+            return ingredient == null;
         }
     }
 
@@ -175,7 +201,7 @@ public final class OptionalRecipeSupport
         Ingredient base,
         Ingredient tagIngredient,
         int count,
-        ResourceLocation uniqueGroup)
+        Identifier uniqueGroup)
     {
     }
 }
