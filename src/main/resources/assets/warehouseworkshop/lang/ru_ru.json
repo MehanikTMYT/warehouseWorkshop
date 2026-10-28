@@ -44,5 +44,6 @@
   "com.warehouseworkshop.core.gui.workshop.status.settings_loading": "Загрузка настроек мастерской...",
   "com.warehouseworkshop.core.gui.workshop.status.invalid_count": "Введите количество для крафта больше 0.",
   "com.warehouseworkshop.core.gui.workshop.craft.tooltip": "Скрафтить выбранный рецепт.",
-  "com.warehouseworkshop.core.gui.workshop.craftall.tooltip": "Скрафтить выбранный рецепт столько раз, сколько указано выше."
+  "com.warehouseworkshop.core.gui.workshop.craftall.tooltip": "Скрафтить выбранный рецепт столько раз, сколько указано выше.",
+  "com.warehouseworkshop.research_supplies.delivery_interrupted": "Доставка исследовательских припасов для %1$s была отменена или прервана, пока припасы были в пути."
 }
